@@ -1,0 +1,91 @@
+<title>Simple WebHID</title>
+<style>label { margin-right: 10px; }</style>
+<p>
+  <label>VendorID  : <input type="text" placeholder="0xde29" id="vid-input" value="DE29" /></label>
+  <label>ProductID : <input type="text" placeholder="0xd703" id="pid-input" value="D703" /></label>
+  <button id="request-button">Request Device</button>
+</p>
+<p>
+  <label>Hex Input : <input type="text" placeholder="0x00dd" id="text-input" value="FF FF 1C 00" /></label>
+  <button id="send-button">Send Hex Content</button>
+</p>
+
+<script>
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const vidInput = document.querySelector('#vid-input')
+const pidInput = document.querySelector('#pid-input')
+const textInput = document.querySelector('#text-input')
+const requestButton = document.querySelector('#request-button')
+const sendButton = document.querySelector('#send-button')
+const HID_PACKET_SIZE = 64
+let device = null
+let outputReportId = 0x0
+let outputReport = new Uint8Array(HID_PACKET_SIZE).fill(0)
+
+const bufferToHex = (buffer) => {
+  const byteArray = new Uint8Array(buffer)
+  const hexArray = [...byteArray].map(byte => byte.toString(16).padStart(2, '0'))
+  return hexArray.join(' ')
+}
+
+const hexToBytes = (hex) => {
+  const bytes = []
+  const trimmed = `${hex}`.replace(/\s/g, '')
+  for (let i = 0; i < trimmed.length; i += 2) {
+    bytes.push(Number.parseInt(trimmed.slice(i, i + 2), 16))
+  }
+  return bytes
+}
+
+const requestDevice = async () => {
+  const filters = [{
+    vendorId: Number.parseInt(vidInput.value, 16),
+    productId: Number.parseInt(pidInput.value, 16),
+    // Teensy
+    // usagePage: 0xFFAB,
+    // usage: 0x0200
+  }]
+
+  try {
+    [device] = await navigator.hid.requestDevice({ filters })
+    if (!device) {
+      console.log('chooser dismissed with no selection')
+      return
+    }
+
+    await device.open()
+    if (!device.opened) {
+      console.log('open failed')
+      return
+    }
+
+    console.log('Connected to device: ', device.productName, device.collections)
+    device.addEventListener('inputreport', (e) => {
+      console.log('Message from device : ', bufferToHex(e.data.buffer))
+    })
+  } catch (error) {
+    console.error(error.name, error.message)
+  }
+}
+
+const sendReport = async () => {
+  const bytesToSend = hexToBytes(textInput.value)
+  outputReport.fill(0)
+  for (let i = 0; i < bytesToSend.length; i++) {
+    if (i < HID_PACKET_SIZE) {
+      outputReport[i] = bytesToSend[i]
+    }
+  }
+
+  try {
+    console.log('Sending report to device: ', device.productName, outputReport)
+    await device.sendReport(outputReportId, outputReport)
+    await wait(500)
+  } catch (error) {
+    console.error(error.name, error.message)
+  }
+}
+
+requestButton.addEventListener('click', requestDevice)
+sendButton.addEventListener('click', sendReport)
+</script>
